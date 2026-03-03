@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>リズム-運動学習実験 | Rhythm Motor Learning</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Top canvas: visual feedback (rotated cursor) -->
+    <canvas id="top-canvas"></canvas>
+
+    <!-- Divider with beat indicator -->
+    <div id="divider">
+      <div id="beat-indicator">
+        <div class="beat-dot" data-beat="1">1</div>
+        <div class="beat-dot" data-beat="2">2</div>
+        <div class="beat-dot" data-beat="3">3</div>
+        <div class="beat-dot" data-beat="4">4</div>
+      </div>
+    </div>
+
+    <!-- Bottom canvas: hand movement space -->
+    <canvas id="bottom-canvas"></canvas>
+
+    <!-- Condition label (shown during rhythm trials) -->
+    <div id="condition-label" class="hidden"></div>
+
+    <!-- Trial info -->
+    <div id="trial-info" class="hidden">
+      <span id="phase-label"></span>
+      <span id="trial-counter"></span>
+    </div>
+
+    <!-- Timing feedback -->
+    <div id="timing-feedback" class="hidden"></div>
+
+    <!-- Overlay for instructions and transitions -->
+    <div id="overlay">
+      <div id="overlay-content">
+        <!-- Welcome screen (default) -->
+        <div id="screen-welcome" class="screen active">
+          <h1>リズム-運動学習実験</h1>
+          <p class="description">
+            この実験では、リズムに合わせてカーソルを動かすことで、
+            運動学習における文脈依存性を調べます。
+          </p>
+          <div class="instructions">
+            <h3>実験の流れ</h3>
+            <ul>
+              <li><strong>画面下半分</strong>でマウスを動かすと、<strong>画面上半分</strong>にカーソルが表示されます</li>
+              <li>中心のスタート位置からターゲットに向かってリーチングを行います</li>
+              <li>リズム条件では、指定されたビートに合わせて動きを開始してください</li>
+              <li>上半分のカーソルがターゲットに到達するように動かしてください</li>
+            </ul>
+          </div>
+          <div class="form-group">
+            <label for="participant-id">参加者ID:</label>
+            <input type="text" id="participant-id" placeholder="例: P001" value="">
+          </div>
+          <button id="btn-start" class="btn-primary">実験開始</button>
+        </div>
+
+        <!-- Phase intro screen -->
+        <div id="screen-phase-intro" class="screen">
+          <h2 id="phase-title"></h2>
+          <p id="phase-description"></p>
+          <p id="phase-trial-count"></p>
+          <button id="btn-phase-start" class="btn-primary">開始</button>
+        </div>
+
+        <!-- Phase end screen -->
+        <div id="screen-phase-end" class="screen">
+          <h2>フェーズ完了</h2>
+          <p id="phase-end-message"></p>
+          <button id="btn-phase-next" class="btn-primary">次へ</button>
+        </div>
+
+        <!-- Experiment end screen -->
+        <div id="screen-end" class="screen">
+          <h2>実験完了</h2>
+          <p>お疲れ様でした！全てのフェーズが完了しました。</p>
+          <div id="results-summary"></div>
+          <canvas id="results-canvas" width="800" height="400"></canvas>
+          <div class="btn-group">
+            <button id="btn-download" class="btn-primary">データをCSVでダウンロード</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
