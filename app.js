@@ -225,7 +225,8 @@ class Display {
     const dpr = this.dpr;
     const w = window.innerWidth;
     const dividerH = 44;
-    const h = Math.floor((window.innerHeight - dividerH) / 2);
+    const totalH = window.innerHeight || document.documentElement.clientHeight;
+    const h = Math.floor((totalH - dividerH) / 2);
 
     this.topCanvas.width = w * dpr;
     this.topCanvas.height = h * dpr;
@@ -244,6 +245,10 @@ class Display {
     this.halfHeight = h;
     this.topCenter = { x: w / 2, y: h / 2 };
     this.bottomCenter = { x: w / 2, y: h / 2 };
+
+    // Scale display elements for small screens
+    const minDim = Math.min(w, h);
+    this.scale = Math.min(1, minDim / 350);
   }
 
   clear() {
@@ -270,22 +275,25 @@ class Display {
 
   drawStartCircle(ctx, cx, cy, active) {
     const color = active ? CONFIG.colors.startActive : CONFIG.colors.start;
-    this.circle(ctx, cx, cy, CONFIG.startRadius, color, false);
+    const r = CONFIG.startRadius * this.scale;
+    this.circle(ctx, cx, cy, r, color, false);
     if (active) {
-      this.circle(ctx, cx, cy, CONFIG.startRadius * 0.4, color);
+      this.circle(ctx, cx, cy, r * 0.4, color);
     }
   }
 
   drawTarget(ctx, cx, cy, angleDeg, color) {
     const rad = deg2rad(angleDeg);
-    const tx = cx + CONFIG.targetDistance * Math.sin(rad);
-    const ty = cy - CONFIG.targetDistance * Math.cos(rad);
+    const d = CONFIG.targetDistance * this.scale;
+    const tx = cx + d * Math.sin(rad);
+    const ty = cy - d * Math.cos(rad);
 
+    const tr = CONFIG.targetRadius * this.scale;
     // Filled background
-    this.circle(ctx, tx, ty, CONFIG.targetRadius, CONFIG.colors.targetFill);
+    this.circle(ctx, tx, ty, tr, CONFIG.colors.targetFill);
     // Outline
     ctx.beginPath();
-    ctx.arc(tx, ty, CONFIG.targetRadius, 0, Math.PI * 2);
+    ctx.arc(tx, ty, tr, 0, Math.PI * 2);
     ctx.strokeStyle = color;
     ctx.lineWidth = 2.5;
     ctx.stroke();
@@ -323,7 +331,7 @@ class Display {
   drawEndpointFeedback(ctx, cx, cy, targetAngle, endpointAngle, color) {
     // Draw line from center to endpoint direction
     const endRad = deg2rad(endpointAngle);
-    const len = CONFIG.targetDistance;
+    const len = CONFIG.targetDistance * this.scale;
     const ex = cx + len * Math.sin(endRad);
     const ey = cy - len * Math.cos(endRad);
 
@@ -342,6 +350,7 @@ class Display {
 
     const tc = this.topCenter;
     const bc = this.bottomCenter;
+    const s = this.scale;
 
     // Draw start circles
     this.drawStartCircle(this.topCtx, tc.x, tc.y, state.atStart);
@@ -361,8 +370,8 @@ class Display {
 
     // Draw visual cursor (rotated) on top canvas
     if (state.showCursor) {
-      const vx = tc.x + state.visualDx;
-      const vy = tc.y + state.visualDy;
+      const vx = tc.x + state.visualDx * s;
+      const vy = tc.y + state.visualDy * s;
       this.drawCursor(this.topCtx, vx, vy);
     }
 
@@ -375,8 +384,6 @@ class Display {
 
     // Feedback overlay on top canvas
     if (state.showFeedback) {
-      const color = state.condition === 'beat2' ? CONFIG.colors.beat2 :
-                    state.condition === 'beat4' ? CONFIG.colors.beat4 : '#aaaaaa';
       this.drawEndpointFeedback(
         this.topCtx, tc.x, tc.y,
         state.targetAngle, state.endpointAngle,
@@ -387,7 +394,7 @@ class Display {
     // Message on bottom canvas
     if (state.bottomMessage) {
       this.drawLabel(
-        this.bottomCtx, bc.x, bc.y + CONFIG.targetDistance + 40,
+        this.bottomCtx, bc.x, bc.y + CONFIG.targetDistance * s + 40,
         state.bottomMessage, 'rgba(255,255,255,0.35)', 14
       );
     }
@@ -449,6 +456,7 @@ class App {
     this.trail = [];
     this.atStart = false;
     this.movementStarted = false;
+    this.touching = false;
 
     // Timing
     this.holdStart = 0;
@@ -497,14 +505,37 @@ class App {
       this.downloadCSV();
     });
 
-    // Pointer tracking on the whole document
-    document.addEventListener('pointermove', (e) => this.onPointerMove(e));
-    document.addEventListener('pointerdown', (e) => this.onPointerDown(e));
+    // Pointer tracking - use bottom canvas for capture
+    this.bottomCanvas.addEventListener('pointerdown', (e) => this.onPointerDown(e));
+    this.bottomCanvas.addEventListener('pointermove', (e) => this.onPointerMove(e));
+    this.bottomCanvas.addEventListener('pointerup', (e) => this.onPointerUp(e));
+    this.bottomCanvas.addEventListener('pointercancel', (e) => this.onPointerUp(e));
+
+    // Also track on the top canvas and document (finger might start there)
+    this.topCanvas.addEventListener('pointerdown', (e) => this.onPointerDown(e));
+    this.topCanvas.addEventListener('pointermove', (e) => this.onPointerMove(e));
+    this.topCanvas.addEventListener('pointerup', (e) => this.onPointerUp(e));
+    this.topCanvas.addEventListener('pointercancel', (e) => this.onPointerUp(e));
+
+    // For mouse: also track on document so hover works outside canvas
+    document.addEventListener('pointermove', (e) => {
+      if (e.pointerType === 'mouse') {
+        this.touching = true; // Mouse is always "touching"
+        this.onPointerMove(e);
+      }
+    });
+
+    // Prevent context menu on long press
+    document.addEventListener('contextmenu', (e) => {
+      if (this.running) e.preventDefault();
+    });
   }
 
   onPointerMove(e) {
+    e.preventDefault();
     if (!this.running) return;
 
+    // Use bottom canvas center as reference, map from wherever the touch is
     const rect = this.bottomCanvas.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
@@ -512,14 +543,41 @@ class App {
     this.handDx = mouseX - this.display.bottomCenter.x;
     this.handDy = mouseY - this.display.bottomCenter.y;
     this.lastPointerTime = performance.now();
+    this.touching = true;
 
     // Visual cursor is updated each frame in gameLoop via updateVisualCursor
     this.updateVisualCursor();
   }
 
   onPointerDown(e) {
+    e.preventDefault();
     // Resume audio context on user gesture
     this.audio.resume();
+
+    // Capture pointer for continuous tracking on touch devices
+    try {
+      e.target.setPointerCapture(e.pointerId);
+    } catch (_) {}
+
+    this.touching = true;
+
+    // Also update position immediately
+    if (this.running) {
+      const rect = this.bottomCanvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      this.handDx = mouseX - this.display.bottomCenter.x;
+      this.handDy = mouseY - this.display.bottomCenter.y;
+      this.updateVisualCursor();
+    }
+  }
+
+  onPointerUp(e) {
+    e.preventDefault();
+    try {
+      e.target.releasePointerCapture(e.pointerId);
+    } catch (_) {}
+    this.touching = false;
   }
 
   getCurrentRotation() {
@@ -681,7 +739,7 @@ class App {
     switch (this.trialState) {
 
       case TrialState.WAIT_START:
-        this.atStart = handDist < CONFIG.startRadius;
+        this.atStart = this.touching && handDist < CONFIG.startRadius * 2;
         if (this.atStart) {
           this.holdStart = now;
           this.setTrialState(TrialState.HOLDING);
@@ -689,7 +747,7 @@ class App {
         break;
 
       case TrialState.HOLDING:
-        this.atStart = handDist < CONFIG.startRadius * 1.5;
+        this.atStart = this.touching && handDist < CONFIG.startRadius * 2.5;
         if (!this.atStart) {
           this.setTrialState(TrialState.WAIT_START);
           break;
@@ -781,12 +839,18 @@ class App {
 
         if (!this.movementStarted) break;
 
-        // Record trail in visual space
+        // Record trail in visual space (scaled for display)
         const tc = this.display.topCenter;
-        this.trail.push({ x: tc.x + this.visualDx, y: tc.y + this.visualDy });
+        const s = this.display.scale;
+        this.trail.push({ x: tc.x + this.visualDx * s, y: tc.y + this.visualDy * s });
 
-        // Check if reached target distance (using hand distance, rotation preserves magnitude)
-        if (handDist >= CONFIG.reachThreshold) {
+        // Check if reached target distance (scaled for screen size)
+        if (handDist >= CONFIG.reachThreshold * s) {
+          this.onReachComplete(now);
+        }
+
+        // On touch devices: if finger is lifted during reach, complete it
+        if (!this.touching && this.movementStarted && handDist > CONFIG.moveThreshold * 2) {
           this.onReachComplete(now);
         }
 
